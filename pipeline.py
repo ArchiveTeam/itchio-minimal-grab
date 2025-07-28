@@ -63,7 +63,7 @@ VERSION = '20250111.02'
 USER_AGENT = 'Archiveteam (https://wiki.archiveteam.org/; communicate at https://webirc.hackint.org/#ircs://irc.hackint.org/#archiveteam)'
 TRACKER_ID = 'itchio-minimal'
 TRACKER_HOST = 'legacy-api.arpa.li'
-MULTI_ITEM_SIZE = 1 # Do not increase!
+MULTI_ITEM_SIZE = 1 # Do not increase, this will break the project as written now
 
 
 ###########################################################################
@@ -295,6 +295,7 @@ pipeline = Pipeline(
             'start_urls': ItemValue('start_urls'),
             'item_names_table': ItemValue('item_names_table'),
             'LANG': 'en_US.UTF-8',
+            # Hack so I can test these scripts on NixOS, should not affect prod
             'LUA_PATH': os.environ.get('LUA_PATH', ''),
             'LUA_CPATH': os.environ.get('LUA_CPATH', '')
         }

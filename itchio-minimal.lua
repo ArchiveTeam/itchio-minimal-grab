@@ -303,6 +303,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     end
     if url:match(game_base_re .. "$") then
       print_debug("Base case game:")
+      assert(load_html():match('<style type="text/css" id="game_theme">'))
       if load_html():match("html_embed_%d+") or load_html():match("jar_drop") or load_html():match("Unity Web Player%. Install now!") or load_html():match("flash_notification") then
         print("Aborting", url, "because it has an embed; you do not need to report this")
         abortgrab = true -- Feel free to remove after the 1st or 2nd run

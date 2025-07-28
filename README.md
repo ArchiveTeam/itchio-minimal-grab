@@ -1,11 +1,11 @@
-# cohost-grab
+# itchio-minimal-grab
 
-cohost-grab
+itchio-minimal-grab
 =============
-This is a script you can run to grab the Cohost site.
+This is a script you can run to grab the Itchio site, not comprehensively but it'll get downloads of non-embeds.
 
 
-More information about the Cohost archiving project can be found on the ArchiveTeam wiki: [Cohost](https://wiki.archiveteam.org/index.php?title=Cohost)
+More information about the Itchio archiving project can be found on the ArchiveTeam wiki: [Itchio](https://wiki.archiveteam.org/index.php?title=Itch.io)
 ## Setup instructions
 
 ### General instructions
@@ -27,7 +27,7 @@ We strongly encourage you to join the IRC channel associated with this project i
 
 #### Archive Team Warrior (recommended for most users)
 
-This and other archiving projects can easily be run using the [Archive Team Warrior](https://wiki.archiveteam.org/index.php/ArchiveTeam_Warrior) virtual machine. Follow the [instructions on the Archive Team wiki](https://wiki.archiveteam.org/index.php/ArchiveTeam_Warrior) for installing the Warrior, and from the web interface running at `http://localhost:8001/`, enter the nickname that you want to be shown as on the tracker. There is no registration, just pick a nickname you like. Then, select the `cohost` project in the Warrior interface.
+This and other archiving projects can easily be run using the [Archive Team Warrior](https://wiki.archiveteam.org/index.php/ArchiveTeam_Warrior) virtual machine. Follow the [instructions on the Archive Team wiki](https://wiki.archiveteam.org/index.php/ArchiveTeam_Warrior) for installing the Warrior, and from the web interface running at `http://localhost:8001/`, enter the nickname that you want to be shown as on the tracker. There is no registration, just pick a nickname you like. Then, select the `itchio-minimal` project in the Warrior interface.
 
 #### Project-specific Docker container (for more advanced users)
 
@@ -39,7 +39,7 @@ It is advised to use [Watchtower](https://github.com/containrrr/watchtower) to a
 
 after which the project container can be run:
 
-    docker run -d --name archiveteam --label=com.centurylinklabs.watchtower.enable=true --log-driver json-file --log-opt max-size=50m --restart=unless-stopped atdr.meo.ws/archiveteam/cohost-grab --concurrent 1 YOURNICKHERE
+    docker run -d --name archiveteam --label=com.centurylinklabs.watchtower.enable=true --log-driver json-file --log-opt max-size=50m --restart=unless-stopped atdr.meo.ws/archiveteam/itchio-minimal-grab --concurrent 1 YOURNICKHERE
 
 Be sure to replace `YOURNICKHERE` with the nickname that you want to be shown as on the tracker. There is no registration, just pick a nickname you like.
 
