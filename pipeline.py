@@ -3,6 +3,7 @@ import datetime
 from distutils.version import StrictVersion
 import hashlib
 import os.path
+from os import environ
 import random
 from seesaw.config import realize, NumberConfigValue
 from seesaw.externalprocess import ExternalProcess
@@ -60,9 +61,9 @@ if not WGET_AT:
 # It will be added to the WARC files and reported to the tracker.
 VERSION = '20250111.02'
 USER_AGENT = 'Archiveteam (https://wiki.archiveteam.org/; communicate at https://webirc.hackint.org/#ircs://irc.hackint.org/#archiveteam)'
-TRACKER_ID = 'cohost'
+TRACKER_ID = 'itchio-minimal'
 TRACKER_HOST = 'legacy-api.arpa.li'
-MULTI_ITEM_SIZE = 20
+MULTI_ITEM_SIZE = 1 # Do not increase!
 
 
 ###########################################################################
@@ -174,7 +175,7 @@ class MaybeSendDoneToTracker(SendDoneToTracker):
 
 CWD = os.getcwd()
 PIPELINE_SHA1 = get_hash(os.path.join(CWD, 'pipeline.py'))
-LUA_SHA1 = get_hash(os.path.join(CWD, 'cohost.lua'))
+LUA_SHA1 = get_hash(os.path.join(CWD, 'itchio-minimal.lua'))
 
 def stats_id_function(item):
     d = {
@@ -199,7 +200,7 @@ class WgetArgs(object):
             '--reject-reserved-subnets',
             '--content-on-error',
             '--load-cookies', 'cookies.txt',
-            '--lua-script', 'cohost.lua',
+            '--lua-script', 'itchio-minimal.lua',
             '-o', ItemInterpolation('%(item_dir)s/wget.log'),
             #'--debug',
             '--no-check-certificate',
@@ -212,7 +213,6 @@ class WgetArgs(object):
             '--page-requisites',
             '--timeout', '90',
             '--tries', 'inf',
-            '--domains', 'cohost.org',
             '--span-hosts',
             '--waitretry', '90',
             '--warc-file', ItemInterpolation('%(item_dir)s/%(warc_file_base)s'),
@@ -241,65 +241,12 @@ class WgetArgs(object):
                 item_type, item_value = item_name.split(':', 1)
             else:
                 item_type, item_value = "dummy", item_name
-            if item_type == 'user':
-                if not re.match(r"^[0-9a-zA-Z\-]+(\+\d+)?$", item_value):
-                    print("Skipping invalid item", item_value)
-                    continue
-                if m := re.match(r"^([0-9a-zA-Z\-]+)\+(\d+)$", item_value):
-                    wget_args.extend(['--warc-header', 'cohost-user: ' + item_value])
-                    url = f'https://cohost.org/{m.group(1)}?page={m.group(2)}'
-                    wget_args.append(url)
-                    set_start_url(item_type, item_value, url)
-                else:
-                    wget_args.extend(['--warc-header', 'cohost-user: ' + item_value])
-                    wget_args.append(f'https://cohost.org/{item_value}')
-                    set_start_url(item_type, item_value, f'https://cohost.org/{item_value}')
-            elif item_type == "userfix1":
-                wget_args.extend(['--warc-header', 'cohost-userfix1: ' + item_value])
-                wget_args.append(f'https://cohost.org/{item_value}')
-                set_start_url(item_type, item_value, f'https://cohost.org/{item_value}')
-            elif item_type == 'userfix2':
-                wget_args.extend(['--warc-header', 'cohost-userfix2: ' + item_value])
-                if m := re.match(r"^([0-9a-zA-Z\-]+)\+(\d+)$", item_value):
-                    url = f'https://cohost.org/{m.group(1)}?page={m.group(2)}'
-                    wget_args.append(url)
-                    set_start_url(item_type, item_value, url)
-                else:
-                    wget_args.append(f'https://cohost.org/{item_value}')
-                    set_start_url(item_type, item_value, f'https://cohost.org/{item_value}')
-            elif item_type == "usertag":
-                user, tag = item_value.split("/", 1)
-                wget_args.extend(['--warc-header', 'cohost-user-tag: ' + item_value])
-                url = f'https://cohost.org/{user}/tagged/{tag}'
-                wget_args.append(url)
-                set_start_url(item_type, item_value, url)
-            elif item_type == "tag":
-                wget_args.extend(['--warc-header', 'cohost-tag: ' + item_value])
-                wget_args.append(f'https://cohost.org/rc/tagged/{item_value}')
-                set_start_url(item_type, item_value, f'https://cohost.org/rc/tagged/{item_value}')
-            elif item_type == "tagext":
-                start_offset, timestamp, tag_name = item_value.split("/", 2)
-                url = f"https://cohost.org/rc/tagged/{tag_name}?refTimestamp={timestamp}&skipPosts={start_offset}"
-                wget_args.extend(['--warc-header', 'cohost-tagext: ' + item_value])
-                wget_args.append(url)
-                
-                set_start_url(item_type, item_value, url)
-            elif item_type == "http" or item_type == "https":
-                # Tracker item name is "http" and "https" to take care of some raw URLs that somehow ended up queued there as items before this type was added
-                # But the name used by the script is "url:[value]"
-                wget_args.extend(['--warc-header', 'cohost-url: ' + item_name])
-                wget_args.append(item_name)
-                set_start_url("url", item_name, item_name)
-            elif item_type == "dummy":
-                wget_args.extend(['--warc-header', 'cohost-user-dummy: ' + item_value])
-                url = 'https://cohost.org/'
-                wget_args.append(url)
-                set_start_url(item_type, item_value, url)
-            elif item_type == "post":
-                # This item type is only used for testing; does not get everything to play back a post but causes a substantial portion of the logic to run
-                wget_args.extend(['--warc-header', 'cohost-post: ' + item_value])
-                wget_args.append(f'https://cohost.org/{item_value}')
-                set_start_url(item_type, item_value, f'https://cohost.org/{item_value}')
+            if item_type == 'game':
+                wget_args.extend(['--warc-header', 'itchio-rough-game: ' + item_value])
+                [user, game] = item_value.split("/")
+                wget_args.append(f'https://{user}.itch.io/{game}')
+                set_start_url(item_type, item_value, f'https://{user}.itch.io/{game}')
+                wget_args.append('http://archiveteam.invalid/itch_end_of_normal_recurse')
             else:
                 raise ValueError('item_type not supported.')
 
@@ -325,10 +272,10 @@ class WgetArgs(object):
 # This will be shown in the warrior management panel. The logo should not
 # be too big. The deadline is optional.
 project = Project(
-    title = 'cohost',
+    title = 'itchio-minimal',
     project_html = '''
-    <img class="project-logo" alt="logo" src="https://wiki.archiveteam.org/images/4/41/Cohost_logo.png" height="50px"/>
-    <h2>Cohost <span class="links"><a href="https://cohost.org/">Website</a> &middot; <a href="http://tracker.archiveteam.org/cohost/">Leaderboard</a></span></h2>
+    <img class="project-logo" alt="logo" src="https://wiki.archiveteam.org/images/2/23/Itchio-logo.png" height="50px"/>
+    <h2>Itchio-minimal <span class="links"><a href="https://itch.io/">Website</a> &middot; <a href="http://tracker.archiveteam.org/itchio-minimal/">Leaderboard</a></span></h2>
     ''',
     utc_deadline = datetime.datetime(2025,1,1, 0,0,0))
 
@@ -337,7 +284,7 @@ pipeline = Pipeline(
     GetItemFromTracker('http://{}/{}/multi={}/'
         .format(TRACKER_HOST, TRACKER_ID, MULTI_ITEM_SIZE),
         downloader, VERSION),
-    PrepareDirectories(warc_prefix='cohost'),
+    PrepareDirectories(warc_prefix='itchio-minimal'),
     WgetDownload(
         WgetArgs(),
         max_tries=1,
@@ -347,7 +294,9 @@ pipeline = Pipeline(
             'warc_file_base': ItemValue('warc_file_base'),
             'start_urls': ItemValue('start_urls'),
             'item_names_table': ItemValue('item_names_table'),
-            'LANG': 'en_US.UTF-8'
+            'LANG': 'en_US.UTF-8',
+            'LUA_PATH': os.environ.get('LUA_PATH', ''),
+            'LUA_CPATH': os.environ.get('LUA_CPATH', '')
         }
     ),
     PrepareStatsForTracker(

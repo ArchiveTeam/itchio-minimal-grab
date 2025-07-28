@@ -5,7 +5,6 @@ local urlparse = require("socket.url")
 local luasocket = require("socket") -- Used to get sub-second time
 local http = require("socket.http")
 JSON = assert(loadfile "JSON.lua")()
-CJSON = require "cjson"
 local fun = require("fun")
 
 local start_urls = JSON:decode(os.getenv("start_urls"))
@@ -28,7 +27,17 @@ local next_start_url_index = 1
 local do_retry = false
 local redirects_level = 0
 
+-- Downloads expire quickly, such that we can't just add them to URLs. So put an additional URL (http://archiveteam.invalid/) at the end of the wget initial URL list, and queue them all sequentially when we get there
+local download_urls = {}
+local got_to_time_constrained_url = false
+local external_download_urls = {}
+
 io.stdout:setvbuf("no") -- So prints are not buffered - http://lua.2524044.n2.nabble.com/print-stdout-and-flush-td6406981.html
+
+
+function is_cdn_url(url)
+  return url:match("itchio%-mirror.*cloudflarestorage%.com") or url:match("dl%.itch%.zone")
+end
 
 if urlparse == nil or http == nil then
   io.stdout:write("socket not corrently installed.\n")
@@ -43,42 +52,6 @@ print_debug = function(...)
   end
 end
 print_debug("This grab script is running in debug mode. You should not see this in production.")
-
--- CJSON wrapper that turns it into JSON.lua format
--- Needed because in some cases I do "if [field]" and it'd take a lot of work to figure out if I'm checking for presence or checking for null
-local function json_decode(s)
-  local function convert(o)
-    if type(o) == "table" then
-      local new = {}
-      for k, v in pairs(o) do
-        if v ~= CJSON.null then
-          new[k] = convert(v)
-        end
-      end
-      return new
-    else
-      return o
-    end
-  end
-  
-  local function recursive_assert_equals(a, b)
-    assert(type(a) == type(b))
-    if type(a) == "table" then
-      for k, v in pairs(a) do
-        recursive_assert_equals(v, b[k])
-      end
-      for k, _ in pairs(b) do
-        assert(a[k] ~= nil)
-      end
-    else
-      assert(a == b, tostring(a) .. tostring(b))
-    end
-  end
-  
-  local out = convert(CJSON.decode(s))
-  --recursive_assert_equals(out, JSON:decode(s))
-  return out
-end
 
 local start_urls_inverted = {}
 for _, v in pairs(start_urls) do
@@ -104,31 +77,6 @@ set_new_item = function(url)
   assert(current_item_value)
 end
 
-discover_item = function(item_type, item_name)
-  print_debug("Trying to discover " .. item_type .. ":" .. item_name)
-  assert(item_type)
-  assert(item_name)
-  if item_type == "user" then
-    assert(item_name:match("^" .. USERNAME_RE .. "$") or item_name:match("^" .. USERNAME_RE .. "%+%d+$"))
-  end
-
-  if not discovered_items[item_type .. ":" .. item_name] then
-    print_debug("Queuing for discovery " .. item_type .. ":" .. item_name)
-  end
-  discovered_items[item_type .. ":" .. item_name] = true
-end
-
-discover_url = function(url)
-  assert(url)
-  --assert(url:match(":")) disabled for this project as potential garbage is sent here
-  if url:match("\n") or not url:match(":") or #url > 500 or url:match("%s") then -- Garbage
-    return
-  end
-  if not discovered_urls[url] then
-    print_debug("Discovering for #// " .. url)
-    discovered_urls[url] = true
-  end
-end
 
 add_ignore = function(url)
   if url == nil then -- For recursion
@@ -165,7 +113,7 @@ read_file = function(file)
 end
 
 allowed = function(url, parenturl, forced)
-  print_debug("Allowed on " .. url)
+  --print_debug("Allowed on " .. url)
   assert(parenturl ~= nil)
 
   if start_urls_inverted[url] then
@@ -192,11 +140,24 @@ allowed = function(url, parenturl, forced)
     return false
   end
   
+  local user, game = url:match("^https?://([^%.]+).itch%.io/([^/]+)")
+  if user and user .. "/" .. game == current_item_value then
+    return true
+  end
+  
+  if url:match("^https?://[^%.]+%.itch%.io/.*/add%-to%-collection$") then
+    return false
+  end
+  
+  if url:match("^https?://[^%.]%.itch%.io/") or is_cdn_url(url) then
+    return true
+  end
+  
 
   if forced then
     return true -- N.b. this function is bypassed by check() anyway
   else
-    discover_url(url)
+    --print_debug("Renjecting", url)
     return false
   end
 end
@@ -241,8 +202,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if (downloaded[url_] ~= true and addedtolist[url_] ~= true)
       and (allowed(url_, origurl, force) or force) then
       print_debug("Queueing " .. url_)
-      local link_expect_html = nil
-      table.insert(urls, { url=url_, headers={["Accept-Language"]="en-US,en;q=0.5"}, link_expect_html=link_expect_html})
+      table.insert(urls, { url=url_, headers={["Accept-Language"]="en-US,en;q=0.5"}})
       addedtolist[url_] = true
       addedtolist[url] = true
     end
@@ -325,8 +285,79 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     return html
   end
   
+  local game_base_re = "^https?://[^/%.]+%.itch%.io/[^/%?]+"
   
-
+  if current_item_type == "game" then
+    local current_user, current_game = current_item_value:match("^([%l%d%-_]+)/([%w%-_]+)$")
+    
+    -- Queue all downloads from download buttons on the current page. With "suffix" on the end of the tell-me-the-cdn-url request.
+    local function queue_download_buttons(suffix)
+      local cxrf_token = load_html():match('<meta name="csrf_token" value="(.-)"')
+      assert(cxrf_token)
+      print_debug("CSRF token", cxrf_token)
+      for download_id in load_html():gmatch('data%-upload_id="(%d+)"') do
+        table.insert(download_urls, { url="https://" .. current_user .. ".itch.io/" .. current_game .. "/file/" .. download_id .. suffix, 
+          post_data="csrf_token=" .. urlparse.escape(cxrf_token),
+          headers={["Accept-Language"]="en-US,en;q=0.5"}})
+      end
+    end
+    if url:match(game_base_re .. "$") then
+      print_debug("Base case game:")
+      if load_html():match("html_embed_%d+") or load_html():match("jar_drop") or load_html():match("Unity Web Player%. Install now!") or load_html():match("flash_notification") then
+        print("Aborting", url, "because it has an embed; you do not need to report this")
+        abortgrab = true -- Feel free to remove after the 1st or 2nd run
+      end
+      
+      if load_html():match('class="button buy_btn"') then
+        check(url .. "/purchase")
+        check(url .. "/purchase?lightbox=true")
+      end
+      queue_download_buttons("?source=view_game&as_props=1")
+    elseif url:match(game_base_re .. "/purchase$") then
+      if load_html():match("direct_download_btn") then
+        table.insert(urls, { url="https://" .. current_user .. ".itch.io/" .. current_game .. "/download_url", 
+            method="POST",
+            body_data="",
+            headers={["Accept-Language"]="en-US,en;q=0.5"}})
+      else
+        assert(not load_html():match("No thanks, just take me to the downloads"))
+      end
+    elseif url:match(game_base_re .. "/download_url") then -- API request that gets made when you bypass pay-what-you-want
+      local json = JSON:decode(load_html())
+      local redir = json["url"]
+      assert(redir:match(game_base_re .. "/download/[^/%?]+$"))
+      check(redir)
+    elseif url:match(game_base_re .. "/download/") then -- The page you get to after you bypass pay-what-you-want
+      queue_download_buttons("?source=game_download&after_download_lightbox=1&as_props=1")
+    
+    -- Weird in-order thing here
+    elseif url == "http://archiveteam.invalid/itch_end_of_normal_recurse" then
+      assert(not got_to_time_constrained_url)
+      got_to_time_constrained_url = true
+      if #download_urls > 0 then
+        table.insert(urls, download_urls[#download_urls])
+        download_urls[#download_urls] = nil
+      end
+    elseif url:match(game_base_re .. "/file/") then
+      assert(got_to_time_constrained_url)
+      local json = JSON:decode(load_html())
+      local dest = json["url"]:match("^([^#]+)")
+      if not json["external"] then
+        print_debug(dest, "should be CDN")
+        assert(is_cdn_url(dest))
+      else
+        external_download_urls[dest] = true
+      end
+      check(dest, true)
+    elseif is_cdn_url(url) or external_download_urls[url] then
+      print_debug("Is finish chain, remaining:", JSON:encode(download_urls))
+      assert(got_to_time_constrained_url)
+      if #download_urls > 0 then
+        table.insert(urls, download_urls[#download_urls])
+        download_urls[#download_urls] = nil
+      end
+    end
+  end
   
   return urls
 end
@@ -352,10 +383,8 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
   end
 
 
-  -- Handle redirects not in download chains
-  if status_code >= 300 and status_code <= 399 and (
-      (redirects_level > 0 and redirects_level < 5)
-    ) then
+  -- External download chains
+  if status_code >= 300 and status_code <= 399 and external_download_urls[url["url"]] and redirects_level < 5 then
     redirects_level = redirects_level + 1
     local newloc = urlparse.absolute(url["url"], http_stat["newloc"])
     print_debug("newloc is " .. newloc)
@@ -365,23 +394,23 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
     else
       tries = 0
       print_debug("Following redirect to " .. newloc)
-      assert(not (string.match(newloc, "^https?://[^/]*google%.com/sorry") or string.match(newloc, "^https?://consent%.google%.com/")))
-      assert(not string.match(url["url"], "^https?://drive%.google%.com/file/d/.*/view$")) -- If this is a redirect, it will mess up initialization of file: items
-      assert(not string.match(url["url"], "^https?://drive%.google%.com/drive/folders/[0-9A-Za-z_%-]+/?$")) -- Likewise for folder:
-
+      external_download_urls[newloc] = true
       addedtolist[newloc] = true
       return wget.actions.NOTHING
     end
   end
   redirects_level = 0
+  
+  
     
   
   do_retry = false
-  local maxtries = 0
-  local url_is_essential = true
+  local maxtries = 3
+  local url_is_essential = url["url"]:match("^https?://[^%.]+%.itch%.io/") or is_cdn_url(url["url"])
 
   -- Whitelist instead of blacklist status codes
-  if status_code ~= 200 and status_code ~= 404
+  if status_code ~= 200 and status_code ~= 404 and not (status_code >= 300 and status_code < 400)
+    and not (url["url"]:match("^http://archiveteam%.invalid/"))
     then
     print("Server returned " .. http_stat.statcode .. " (" .. err .. "). Sleeping.\n")
     do_retry = true
@@ -415,68 +444,16 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
 end
 
 
-local send_binary = function(to_send, key)
-  local tries = 0
-  while tries < 10 do
-    local body, code, headers, status = http.request(
-            "https://legacy-api.arpa.li/backfeed/legacy/" .. key,
-            to_send
-    )
-    if code == 200 or code == 409 then
-      break
-    end
-    print("Failed to submit discovered URLs." .. tostring(code) .. " " .. tostring(body)) -- From arkiver https://github.com/ArchiveTeam/vlive-grab/blob/master/vlive.lua
-    os.execute("sleep " .. math.floor(math.pow(2, tries)))
-    tries = tries + 1
-  end
-  if tries == 10 then
-    error("Failed to send binary")
-  end
-end
-
--- Taken verbatim from previous projects I've done'
-local queue_list_to = function(list, key)
-  assert(key)
-  if do_debug then
-    for item, _ in pairs(list) do
-      assert(string.match(item, ":"))
-      assert(not fun.iter(item):any(function(b) return b == "\0" end))
-      print("Would have sent discovered item " .. item)
-    end
-  else
-    local to_send = nil
-    for item, _ in pairs(list) do
-      assert(string.match(item, ":")) -- Message from EggplantN, #binnedtray (search "colon"?)
-      assert(not fun.iter(item):any(function(b) return b == "\0" end))
-      if to_send == nil then
-        to_send = item
-      else
-        to_send = to_send .. "\0" .. item
-      end
-      print("Queued " .. item)
-
-      if #to_send > 1500 then
-        send_binary(to_send .. "\0", key)
-        to_send = ""
-      end
-    end
-
-    if to_send ~= nil and #to_send > 0 then
-      send_binary(to_send .. "\0", key)
-    end
-  end
-end
-
 
 wget.callbacks.finish = function(start_time, end_time, wall_time, numurls, total_downloaded_bytes, total_download_time)
   end_of_item()
-  queue_list_to(discovered_items, "cohost-wewri2htv6akk1ij")
-  queue_list_to(discovered_urls, "urls-eucpu0yrat3fsajp")
 end
 
 wget.callbacks.write_to_warc = function(url, http_stat)
   set_new_item(url["url"])
-  if http_stat["statcode"] ~= 200 and http_stat["statcode"] ~= 404 then
+  if not (http_stat["statcode"] == 200 or http_stat["statcode"] == 404 or (http_stat["statcode"] >= 300 and http_stat["statcode"] < 400))
+    and (url["url"]:match("^https?://[^%.]itch%.io/") or is_cdn_url(url["url"]))
+    then
     print_debug("Not WTW")
     return false
   end
@@ -484,6 +461,8 @@ wget.callbacks.write_to_warc = function(url, http_stat)
 end
 
 wget.callbacks.before_exit = function(exit_status, exit_status_string)
+  assert(got_to_time_constrained_url)
+  assert(#download_urls == 0)
   if abortgrab == true then
     return wget.exits.IO_FAIL
   end
