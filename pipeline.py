@@ -59,7 +59,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20250111.02'
+VERSION = '20250728.02'
 USER_AGENT = 'Archiveteam (https://wiki.archiveteam.org/; communicate at https://webirc.hackint.org/#ircs://irc.hackint.org/#archiveteam)'
 TRACKER_ID = 'itchio-minimal'
 TRACKER_HOST = 'legacy-api.arpa.li'
@@ -296,8 +296,8 @@ pipeline = Pipeline(
             'item_names_table': ItemValue('item_names_table'),
             'LANG': 'en_US.UTF-8',
             # Hack so I can test these scripts on NixOS, should not affect prod
-            'LUA_PATH': os.environ.get('LUA_PATH', ''),
-            'LUA_CPATH': os.environ.get('LUA_CPATH', '')
+            # 'LUA_PATH': os.environ.get('LUA_PATH', ''),
+            # 'LUA_CPATH': os.environ.get('LUA_CPATH', '')
         }
     ),
     PrepareStatsForTracker(
