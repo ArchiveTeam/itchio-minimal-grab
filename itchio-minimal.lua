@@ -362,10 +362,17 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         if not json["external"] then
           print_debug(dest, "should be CDN")
           assert(is_cdn_url(dest))
+          check(dest, true)
         else
-          external_download_urls[dest] = true
+          print_debug("External URL", dest)
+          -- Mulpitle download buttons leading to the same external URL - game:nocturnalillusions/exilium-breeding-empire
+          if not external_download_urls[dest] then
+            external_download_urls[dest] = true
+            check(dest, true)
+          else
+            queue_next_download_url()
+          end
         end
-        check(dest, true)
       elseif json["lightbox_type"] == "QuarantineLightbox" then
         -- "Our system has flagged this page for additional review due to potential suspicious behavior from the page owner. "
         -- game:hunnybunthebear/futa-calendar
