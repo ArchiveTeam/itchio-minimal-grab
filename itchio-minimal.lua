@@ -31,6 +31,7 @@ local redirects_level = 0
 local download_urls = {}
 local got_to_time_constrained_url = false
 local external_download_urls = {}
+local cxrf_token = nil
 
 io.stdout:setvbuf("no") -- So prints are not buffered - http://lua.2524044.n2.nabble.com/print-stdout-and-flush-td6406981.html
 
@@ -292,7 +293,8 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     
     -- Queue all downloads from download buttons on the current page. With "suffix" on the end of the tell-me-the-cdn-url request.
     local function queue_download_buttons(suffix)
-      local cxrf_token = load_html():match('<meta name="csrf_token" value="(.-)"')
+      -- Always keep it updated with hte latest value, so we can use the most recent HTML page's value when we want to bypass quarantine
+      cxrf_token = load_html():match('<meta name="csrf_token" value="(.-)"')
       assert(cxrf_token)
       print_debug("CSRF token", cxrf_token)
       for download_id in load_html():gmatch('data%-upload_id="(%d+)"') do
@@ -301,6 +303,14 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           headers={["Accept-Language"]="en-US,en;q=0.5"}})
       end
     end
+    
+    local function queue_next_download_url()
+      if #download_urls > 0 then
+        table.insert(urls, download_urls[#download_urls])
+        download_urls[#download_urls] = nil
+      end
+    end
+    
     if url:match(game_base_re .. "$") then
       print_debug("Base case game:")
       assert(load_html():match('<style type="text/css" id="game_theme">') or load_html():match("We couldn&#039;t find your page"))
@@ -343,28 +353,42 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     elseif url == "http://archiveteam.invalid/itch_end_of_normal_recurse" then
       assert(not got_to_time_constrained_url)
       got_to_time_constrained_url = true
-      if #download_urls > 0 then
-        table.insert(urls, download_urls[#download_urls])
-        download_urls[#download_urls] = nil
-      end
+      queue_next_download_url()
     elseif url:match(game_base_re .. "/file/") then
       assert(got_to_time_constrained_url)
       local json = JSON:decode(load_html())
-      local dest = json["url"]:match("^([^#]+)")
-      if not json["external"] then
-        print_debug(dest, "should be CDN")
-        assert(is_cdn_url(dest))
+      if json["url"] then
+        local dest = json["url"]:match("^([^#]+)")
+        if not json["external"] then
+          print_debug(dest, "should be CDN")
+          assert(is_cdn_url(dest))
+        else
+          external_download_urls[dest] = true
+        end
+        check(dest, true)
+      elseif json["lightbox_type"] == "QuarantineLightbox" then
+        -- "Our system has flagged this page for additional review due to potential suspicious behavior from the page owner. "
+        -- game:hunnybunthebear/futa-calendar
+        local newurl = nil
+        if url:match('?source=game_download&after_download_lightbox=1&as_props=1$') then
+          print_debug("Quarantine case 1")
+          newurl = url:gsub('?source=game_download&after_download_lightbox=1&as_props=1$', '?source=game_download&bypass_quarantine=true&after_download_lightbox=1&as_props=1')
+        elseif url:match('?source=view_game&as_props=1$') then
+          print_debug("Quarantine case 2")
+          newurl = url:gsub('?source=view_game&as_props=1$', '?source=view_game&as_props=1&bypass_quarantine=true$')
+        end
+        assert(newurl)
+        table.insert(download_urls, { url=newurl, 
+          post_data="csrf_token=" .. urlparse.escape(cxrf_token),
+          headers={["Accept-Language"]="en-US,en;q=0.5"}})
+        queue_next_download_url()
       else
-        external_download_urls[dest] = true
+        error("No download URL found, unhandled exception")
       end
-      check(dest, true)
     elseif is_cdn_url(url) or external_download_urls[url] then
       print_debug("Is finish chain, remaining:", JSON:encode(download_urls))
       assert(got_to_time_constrained_url)
-      if #download_urls > 0 then
-        table.insert(urls, download_urls[#download_urls])
-        download_urls[#download_urls] = nil
-      end
+      queue_next_download_url()
     end
   end
   
