@@ -326,8 +326,16 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     elseif url:match(game_base_re .. "/download_url") then -- API request that gets made when you bypass pay-what-you-want
       local json = JSON:decode(load_html())
       local redir = json["url"]
-      assert(redir:match(game_base_re .. "/download/[^/%?]+$"))
-      check(redir)
+      if redir then
+        assert(redir:match(game_base_re .. "/download/[^/%?]+$"))
+        check(redir)
+      elseif json["errors"] and json["errors"][1] == "you must buy this game to download" then
+        -- Limited-addition free downloads are account-locked (thankfully, else we'd be decreasing the counter for nothing)
+        -- game:dmgtoronto/crit-dmg-vol-1
+        print_debug("Limited-edition free download")
+      else
+        print_debug("No redirect found")
+      end
     elseif url:match(game_base_re .. "/download/") then -- The page you get to after you bypass pay-what-you-want
       queue_download_buttons("?source=game_download&after_download_lightbox=1&as_props=1")
     
