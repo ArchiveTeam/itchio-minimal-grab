@@ -314,10 +314,6 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     if url:match(game_base_re .. "$") then
       print_debug("Base case game:")
       assert(load_html():match('<style type="text/css" id="game_theme">') or load_html():match("We couldn&#039;t find your page") or load_html():match("You do not have access to this page"))
-      if load_html():match("html_embed_%d+") or load_html():match("jar_drop") or load_html():match("Unity Web Player%. Install now!") or load_html():match("flash_notification") then
-        print("Aborting", url, "because it has an embed; you do not need to report this")
-        abortgrab = true -- Feel free to remove after the 1st or 2nd run
-      end
       
       if load_html():match('class="button buy_btn"') then
         check(url .. "/purchase")
@@ -390,6 +386,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           headers={["Accept-Language"]="en-US,en;q=0.5"}})
         queue_next_download_url()
       else
+        print_debug("Error HTML is", load_html())
         error("No download URL found, unhandled exception")
       end
     elseif is_cdn_url(url) or external_download_urls[url] then
