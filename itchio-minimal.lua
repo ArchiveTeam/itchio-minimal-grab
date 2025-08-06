@@ -150,7 +150,8 @@ allowed = function(url, parenturl, forced)
     return false
   end
   
-  if url:match("^https?://[^%.]%.itch%.io/") or is_cdn_url(url) then
+  if is_cdn_url(url) then
+    print_debug("True on CDN condition")
     return true
   end
   
