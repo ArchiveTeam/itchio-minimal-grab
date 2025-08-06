@@ -314,7 +314,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     
     if url:match(game_base_re .. "$") then
       print_debug("Base case game:")
-      assert(load_html():match('<style type="text/css" id="game_theme">') or load_html():match("We couldn&#039;t find your page") or load_html():match("You do not have access to this page"))
+      assert(load_html():match('<style type="text/css" id="game_theme">') or load_html():match("We couldn&#039;t find your page") or load_html():match("You do not have access to this page") or load_html():match("This page has been blocked by an itch%.io administrator for violating the site&#039;s content policy%."))
       
       if load_html():match('class="button buy_btn"') then
         check(url .. "/purchase")
