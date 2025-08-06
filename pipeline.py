@@ -275,13 +275,13 @@ project = Project(
     title = 'itchio-minimal',
     project_html = '''
     <img class="project-logo" alt="logo" src="https://wiki.archiveteam.org/images/2/23/Itchio-logo.png" height="50px"/>
-    <h2>Itchio-minimal <span class="links"><a href="https://itch.io/">Website</a> &middot; <a href="http://tracker.archiveteam.org/itchio-minimal/">Leaderboard</a></span></h2>
+    <h2>Itchio-minimal <span class="links"><a href="https://itch.io/">Website</a> &middot; <a href="https://tracker.archiveteam.org/itchio-minimal/">Leaderboard</a></span></h2>
     ''',
     utc_deadline = datetime.datetime(2025,1,1, 0,0,0))
 
 pipeline = Pipeline(
     CheckIP(),
-    GetItemFromTracker('http://{}/{}/multi={}/'
+    GetItemFromTracker('https://{}/{}/multi={}/'
         .format(TRACKER_HOST, TRACKER_ID, MULTI_ITEM_SIZE),
         downloader, VERSION),
     PrepareDirectories(warc_prefix='itchio-minimal'),
@@ -314,7 +314,7 @@ pipeline = Pipeline(
         name='shared:rsync_threads', title='Rsync threads',
         description='The maximum number of concurrent uploads.'),
         UploadWithTracker(
-            'http://%s/%s' % (TRACKER_HOST, TRACKER_ID),
+            'https://%s/%s' % (TRACKER_HOST, TRACKER_ID),
             downloader=downloader,
             version=VERSION,
             files=[
